@@ -1,13 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { initialData } from "./data.js";
 
-const blockOptions = [
-  { type: "paragraph", label: "Lõik" },
-  { type: "checklist", label: "Kontrollnimekiri" },
-  { type: "link", label: "Link" },
-  { type: "image", label: "Pilt" },
-];
-
 function cloneData(value) {
   return JSON.parse(JSON.stringify(value));
 }
@@ -179,6 +172,24 @@ function countComments(step) {
   return step.comments.length;
 }
 
+function getChecklistProgress(blocks) {
+  const checklistItems = blocks
+    .filter((block) => block.type === "checklist")
+    .flatMap((block) => block.items);
+
+  if (!checklistItems.length) {
+    return {
+      hasChecklist: false,
+      allChecked: false,
+    };
+  }
+
+  return {
+    hasChecklist: true,
+    allChecked: checklistItems.every((item) => Boolean(item.checked)),
+  };
+}
+
 function getInstanceProgress(instance) {
   const total = instance.steps.length;
   const done = instance.steps.filter((step) => step.done).length;
@@ -195,11 +206,27 @@ function getInstanceProgress(instance) {
   };
 }
 
+function renderTextWithLinks(text) {
+  const parts = text.split(/(https?:\/\/[^\s<]+)/g);
+
+  return parts.map((part, index) => {
+    if (part.match(/^https?:\/\//)) {
+      return (
+        <a className="inline-link" href={part} key={`${part}-${index}`} rel="noreferrer" target="_blank">
+          {part}
+        </a>
+      );
+    }
+
+    return <span key={`${part}-${index}`}>{part}</span>;
+  });
+}
+
 function highlightMentions(text, users) {
   const names = users.map((user) => user.name).sort((left, right) => right.length - left.length);
 
   if (!names.length) {
-    return text;
+    return renderTextWithLinks(text);
   }
 
   const pattern = new RegExp(`(@(?:${names.map(escapeForRegex).join("|")}))`, "g");
@@ -214,7 +241,7 @@ function highlightMentions(text, users) {
       );
     }
 
-    return <span key={`${part}-${index}`}>{part}</span>;
+    return <span key={`${part}-${index}`}>{renderTextWithLinks(part)}</span>;
   });
 }
 
@@ -231,6 +258,44 @@ function escapeHtml(value) {
     .replaceAll("'", "&#39;");
 }
 
+function autolinkText(value) {
+  return value.replace(
+    /(https?:\/\/[^\s<]+)/g,
+    '<a href="$1" target="_blank" rel="noreferrer">$1</a>',
+  );
+}
+
+function autolinkHtml(html) {
+  if (!html || typeof window === "undefined") {
+    return html;
+  }
+
+  const container = window.document.createElement("div");
+  container.innerHTML = html;
+
+  function walk(node) {
+    if (node.nodeType === Node.TEXT_NODE) {
+      if (!node.textContent?.includes("http://") && !node.textContent?.includes("https://")) {
+        return;
+      }
+
+      const wrapper = window.document.createElement("span");
+      wrapper.innerHTML = autolinkText(escapeHtml(node.textContent));
+      node.replaceWith(...wrapper.childNodes);
+      return;
+    }
+
+    if (node.nodeType !== Node.ELEMENT_NODE || node.nodeName === "A") {
+      return;
+    }
+
+    [...node.childNodes].forEach(walk);
+  }
+
+  [...container.childNodes].forEach(walk);
+  return container.innerHTML;
+}
+
 function paragraphHtml(block) {
   if (block.html) {
     return block.html;
@@ -240,7 +305,7 @@ function paragraphHtml(block) {
     return "";
   }
 
-  return `<p>${escapeHtml(block.text)}</p>`;
+  return `<p>${autolinkText(escapeHtml(block.text))}</p>`;
 }
 
 function Avatar({ user, small = false }) {
@@ -932,11 +997,7 @@ function App() {
 
       <main className="main-pane">
         <header className="topbar">
-          <div>
-            <p className="eyebrow">Kool</p>
-            <h2>{appData.account.name}</h2>
-            <p className="topbar-subtitle">{currentUser.name}</p>
-          </div>
+          <div />
           <div className="topbar-actions">
             <div className="notifications-wrap" ref={notificationsRef}>
               <button
@@ -989,7 +1050,7 @@ function App() {
                 </div>
               ) : null}
             </div>
-            <UserPill user={currentUser} />
+            <Avatar user={currentUser} />
           </div>
         </header>
         <section className="content-pane">{renderPage()}</section>
@@ -1099,14 +1160,9 @@ function HomePage({ instances, onOpenInstance, onOpenAll, onOpenStart, usersById
     <div className="page-stack">
       <div className="page-header">
         <div>
-          <p className="eyebrow">Avaleht</p>
           <h2>Minu aktiivsed tööprotsessid</h2>
-          <p>Siin on {currentUser.name.split(" ")[0]} töövood, mis vajavad lähiajal tähelepanu.</p>
         </div>
         <div className="header-actions">
-          <Button kind="secondary" onClick={onOpenAll} type="button">
-            Kõik aktiivsed tööprotsessid
-          </Button>
           <Button onClick={onOpenStart} type="button">
             Alusta uut tööprotsessi
           </Button>
@@ -1168,9 +1224,7 @@ function AllActivePage({ instances, users, usersById, filters, onFilterChange, o
     <div className="page-stack">
       <div className="page-header">
         <div>
-          <p className="eyebrow">Kooli vaade</p>
           <h2>Kõik aktiivsed tööprotsessid</h2>
-          <p>Kõik pooleliolevad protsessid üle terve kooli konto, sõltumata vastutajast.</p>
         </div>
       </div>
 
@@ -1263,9 +1317,7 @@ function TemplateLibraryPage({ templates, onEditTemplate, onViewTemplate, onOpen
     <div className="page-stack">
       <div className="page-header">
         <div>
-          <p className="eyebrow">Mallid</p>
           <h2>Mallide kogu</h2>
-          <p>Ühes kohas kõik korduvate kooli protsesside mallid, mida saab jooksvalt täiendada ja kohe käivitada.</p>
         </div>
         <Button onClick={onCreateTemplate} type="button">
           Uus mall
@@ -1289,7 +1341,7 @@ function TemplateLibraryPage({ templates, onEditTemplate, onViewTemplate, onOpen
                 <span>Salvestatud {formatDate(template.lastSavedAt)}</span>
               </div>
               <div className="inline-actions">
-                <Button kind="secondary" onClick={() => onOpenStart(template.id)} type="button">
+                <Button kind="success" onClick={() => onOpenStart(template.id)} type="button">
                   Alusta
                 </Button>
                 <Button kind="secondary" onClick={() => onViewTemplate(template.id)} type="button">
@@ -1589,44 +1641,12 @@ function TemplateEditorPage({ template, onBack, onSave, onDelete }) {
 }
 
 function StepBlockEditor({ blocks, onChange }) {
-  const [slashValue, setSlashValue] = useState("");
-
   function updateBlock(blockId, updater) {
     onChange(blocks.map((block) => (block.id === blockId ? updater(block) : block)));
   }
 
   function removeBlock(blockId) {
     onChange(blocks.filter((block) => block.id !== blockId));
-  }
-
-  function addBlock(type) {
-    const baseBlock = {
-      paragraph: {
-        id: makeId("block"),
-        type: "paragraph",
-        text: "",
-      },
-      checklist: {
-        id: makeId("block"),
-        type: "checklist",
-        items: [{ id: makeId("check"), text: "Uus kontrollpunkt" }],
-      },
-      link: {
-        id: makeId("block"),
-        type: "link",
-        label: "",
-        url: "",
-      },
-      image: {
-        id: makeId("block"),
-        type: "image",
-        name: "",
-        src: "",
-      },
-    };
-
-    onChange([...blocks, baseBlock[type]]);
-    setSlashValue("");
   }
 
   function handleImageUpload(event, blockId) {
@@ -1646,10 +1666,6 @@ function StepBlockEditor({ blocks, onChange }) {
     };
     reader.readAsDataURL(file);
   }
-
-  const visibleOptions = blockOptions.filter((option) =>
-    option.label.toLowerCase().includes(slashValue.replace("/", "").toLowerCase()),
-  );
 
   return (
     <div className="block-editor">
@@ -1759,26 +1775,6 @@ function StepBlockEditor({ blocks, onChange }) {
           ) : null}
         </div>
       ))}
-
-      <div className="slash-box">
-        <input
-          className="input"
-          onChange={(event) => setSlashValue(event.target.value)}
-          placeholder="Kirjuta / ploki lisamiseks"
-          type="text"
-          value={slashValue}
-        />
-        {slashValue.startsWith("/") ? (
-          <div className="slash-menu">
-            {visibleOptions.map((option) => (
-              <button className="slash-option" key={option.type} onClick={() => addBlock(option.type)} type="button">
-                {option.label}
-              </button>
-            ))}
-            {!visibleOptions.length ? <p className="muted-copy">Sobivat plokki ei leitud.</p> : null}
-          </div>
-        ) : null}
-      </div>
     </div>
   );
 }
@@ -1806,7 +1802,10 @@ function RichTextBlockEditor({ block, onChange }) {
       return;
     }
 
-    const nextHtml = editorRef.current.innerHTML;
+    const nextHtml = autolinkHtml(editorRef.current.innerHTML);
+    if (editorRef.current.innerHTML !== nextHtml) {
+      editorRef.current.innerHTML = nextHtml;
+    }
     lastSyncedHtmlRef.current = nextHtml;
     onChange(nextHtml, editorRef.current.textContent ?? "");
   }
@@ -2145,9 +2144,8 @@ function WorkflowRunPage({
                 <RunBlocks
                   blocks={step.blocks}
                   onToggleChecklist={(blockId, itemId, checked) =>
-                    updateStep(step.id, (previous) => ({
-                      ...previous,
-                      blocks: previous.blocks.map((block) => {
+                    updateStep(step.id, (previous) => {
+                      const nextBlocks = previous.blocks.map((block) => {
                         if (block.id !== blockId || block.type !== "checklist") {
                           return block;
                         }
@@ -2158,8 +2156,15 @@ function WorkflowRunPage({
                             item.id === itemId ? { ...item, checked } : item,
                           ),
                         };
-                      }),
-                    }))
+                      });
+                      const checklistProgress = getChecklistProgress(nextBlocks);
+
+                      return {
+                        ...previous,
+                        blocks: nextBlocks,
+                        done: checklistProgress.hasChecklist ? checklistProgress.allChecked : previous.done,
+                      };
+                    })
                   }
                   readOnly={readOnly}
                 />
