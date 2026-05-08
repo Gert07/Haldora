@@ -367,6 +367,7 @@ function App() {
   const [currentUserId, setCurrentUserId] = useState(initialData.users[0].id);
   const [currentView, setCurrentView] = useState({ name: "home" });
   const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const notificationsRef = useRef(null);
   const [startModal, setStartModal] = useState({
     open: false,
     templateId: initialData.templates[0].id,
@@ -379,6 +380,7 @@ function App() {
     activeUserId: "",
     activeTemplateQuery: "",
     activeDate: "",
+    activeShowFinished: false,
     archiveUserId: "",
     archiveTemplateQuery: "",
     archiveDate: "",
@@ -392,16 +394,43 @@ function App() {
     .sort((left, right) => new Date(right.createdAt) - new Date(left.createdAt));
   const unreadNotifications = currentUserNotifications.filter((notification) => !notification.readAt);
 
+  useEffect(() => {
+    function handleOutsideClick(event) {
+      if (notificationsRef.current && !notificationsRef.current.contains(event.target)) {
+        setNotificationsOpen(false);
+      }
+    }
+
+    window.addEventListener("click", handleOutsideClick);
+
+    return () => window.removeEventListener("click", handleOutsideClick);
+  }, []);
+
   const myActiveInstances = appData.activeInstances.filter((instance) => instance.assignedUserId === currentUserId);
   const filteredActiveInstances = appData.activeInstances.filter((instance) => {
     const matchesUser = !filters.activeUserId || instance.assignedUserId === filters.activeUserId;
     const matchesTemplate =
       !filters.activeTemplateQuery ||
       instance.templateName.toLowerCase().includes(filters.activeTemplateQuery.toLowerCase());
-    const matchesDate = !filters.activeDate || instance.startedAt === filters.activeDate;
+    const matchesDate = !filters.activeDate || instance.startedAt >= filters.activeDate;
 
     return matchesUser && matchesTemplate && matchesDate;
   });
+  const filteredCompletedForActiveView = appData.archivedInstances.filter((instance) => {
+    const matchesUser = !filters.activeUserId || instance.assignedUserId === filters.activeUserId;
+    const matchesTemplate =
+      !filters.activeTemplateQuery ||
+      instance.templateName.toLowerCase().includes(filters.activeTemplateQuery.toLowerCase());
+    const matchesDate = !filters.activeDate || instance.startedAt >= filters.activeDate;
+
+    return matchesUser && matchesTemplate && matchesDate;
+  });
+  const allActiveViewInstances = [
+    ...filteredActiveInstances.map((instance) => ({ ...instance, archivedView: false })),
+    ...(filters.activeShowFinished
+      ? filteredCompletedForActiveView.map((instance) => ({ ...instance, archivedView: true }))
+      : []),
+  ];
   const filteredArchivedInstances = appData.archivedInstances.filter((instance) => {
     const matchesUser = !filters.archiveUserId || instance.assignedUserId === filters.archiveUserId;
     const matchesTemplate =
@@ -423,7 +452,7 @@ function App() {
       ? appData.archivedInstances.find((instance) => instance.id === currentView.instanceId)
       : null;
   const selectedTemplate =
-    currentView.name === "edit-template"
+    currentView.name === "edit-template" || currentView.name === "view-template"
       ? appData.templates.find((template) => template.id === currentView.templateId)
       : null;
 
@@ -568,6 +597,31 @@ function App() {
     navigate("edit-template", { templateId });
   }
 
+  function deleteTemplate(templateId) {
+    const template = appData.templates.find((item) => item.id === templateId);
+
+    if (!template) {
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Kas kustutada mall "${template.title}"? Olemasolevad juba alustatud tööprotsessid jäävad alles.`,
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    setAppData((previous) => ({
+      ...previous,
+      templates: previous.templates.filter((item) => item.id !== templateId),
+    }));
+
+    if (currentView.name === "edit-template" && currentView.templateId === templateId) {
+      navigate("templates");
+    }
+  }
+
   function saveTemplate(templateDraft) {
     setAppData((previous) => {
       const templates = previous.templates.map((template) => {
@@ -636,7 +690,8 @@ function App() {
         archivedInstances: [archivedInstance, ...previous.archivedInstances],
       };
     });
-    navigate("archive-instance", { instanceId });
+    setFilters((previous) => ({ ...previous, activeShowFinished: true }));
+    navigate("all-active");
   }
 
   function addCommentWithNotifications(instanceId, stepId, text, authorUserId) {
@@ -711,7 +766,6 @@ function App() {
           instances={myActiveInstances}
           onOpenInstance={(instanceId) => navigate("run-instance", { instanceId })}
           onOpenAll={() => navigate("all-active")}
-          onOpenArchive={() => navigate("archive")}
           onOpenStart={() => openStartModal()}
           usersById={usersById}
           currentUser={currentUser}
@@ -723,9 +777,11 @@ function App() {
       return (
         <AllActivePage
           filters={filters}
-          instances={filteredActiveInstances}
+          instances={allActiveViewInstances}
           onFilterChange={(key, value) => setFilters((previous) => ({ ...previous, [key]: value }))}
-          onOpenInstance={(instanceId) => navigate("run-instance", { instanceId })}
+          onOpenInstance={(instance) =>
+            navigate(instance.archivedView ? "archive-instance" : "run-instance", { instanceId: instance.id })
+          }
           today={appData.today}
           users={appData.users}
           usersById={usersById}
@@ -737,9 +793,23 @@ function App() {
       return (
         <TemplateLibraryPage
           templates={appData.templates}
+          onDeleteTemplate={deleteTemplate}
           onEditTemplate={(templateId) => navigate("edit-template", { templateId })}
+          onViewTemplate={(templateId) => navigate("view-template", { templateId })}
           onOpenStart={openStartModal}
           onCreateTemplate={createTemplate}
+        />
+      );
+    }
+
+    if (currentView.name === "view-template" && selectedTemplate) {
+      return (
+        <TemplateViewPage
+          key={selectedTemplate.id}
+          template={selectedTemplate}
+          onBack={() => navigate("templates")}
+          onEdit={() => navigate("edit-template", { templateId: selectedTemplate.id })}
+          onStart={() => openStartModal(selectedTemplate.id)}
         />
       );
     }
@@ -748,6 +818,7 @@ function App() {
       return (
         <TemplateEditorPage
           key={selectedTemplate.id}
+          onDelete={() => deleteTemplate(selectedTemplate.id)}
           template={selectedTemplate}
           onBack={() => navigate("templates")}
           onSave={saveTemplate}
@@ -772,19 +843,6 @@ function App() {
       );
     }
 
-    if (currentView.name === "archive") {
-      return (
-        <ArchivePage
-          filters={filters}
-          instances={filteredArchivedInstances}
-          onFilterChange={(key, value) => setFilters((previous) => ({ ...previous, [key]: value }))}
-          onOpenInstance={(instanceId) => navigate("archive-instance", { instanceId })}
-          users={appData.users}
-          usersById={usersById}
-        />
-      );
-    }
-
     if (currentView.name === "archive-instance" && selectedArchivedInstance) {
       return (
         <WorkflowRunPage
@@ -795,7 +853,7 @@ function App() {
           users={appData.users}
           usersById={usersById}
           readOnly
-          onBack={() => navigate("archive")}
+          onBack={() => navigate("all-active")}
           onUpdateInstance={(updater) => updateArchivedInstance(selectedArchivedInstance.id, updater)}
         />
       );
@@ -817,14 +875,12 @@ function App() {
   return (
     <div className="app-shell">
       <aside className="sidebar">
-        <div className="brand-block">
-          <p className="eyebrow">Koolikorraldus</p>
-          <h1>{appData.account.name}</h1>
-          <p>{appData.account.helperText}</p>
+        <div className="sidebar-school-name">
+          <p className="eyebrow">Kool</p>
+          <h2>{appData.account.name}</h2>
         </div>
 
         <div className="sidebar-section">
-          <p className="section-label">Vaated</p>
           <nav className="nav-list">
             <button
               className={`nav-item${currentView.name === "home" ? " nav-item-active" : ""}`}
@@ -834,30 +890,23 @@ function App() {
               Minu aktiivsed tööprotsessid
             </button>
             <button
-              className={`nav-item${currentView.name === "all-active" || currentView.name === "run-instance" ? " nav-item-active" : ""}`}
+              className={`nav-item${currentView.name === "all-active" || currentView.name === "run-instance" || currentView.name === "archive-instance" ? " nav-item-active" : ""}`}
               onClick={() => navigate("all-active")}
               type="button"
             >
               Kõik aktiivsed tööprotsessid
             </button>
             <button
-              className={`nav-item${currentView.name === "templates" || currentView.name === "edit-template" ? " nav-item-active" : ""}`}
+              className={`nav-item${currentView.name === "templates" || currentView.name === "edit-template" || currentView.name === "view-template" ? " nav-item-active" : ""}`}
               onClick={() => navigate("templates")}
               type="button"
             >
               Mallide kogu
             </button>
-            <button
-              className={`nav-item${currentView.name === "archive" || currentView.name === "archive-instance" ? " nav-item-active" : ""}`}
-              onClick={() => navigate("archive")}
-              type="button"
-            >
-              Lõpetatud tööprotsessid
-            </button>
           </nav>
         </div>
 
-        <div className="sidebar-section">
+        <div className="sidebar-section sidebar-user-section">
           <p className="section-label">Aktiivne kasutaja</p>
           <PersonSelect users={appData.users} selectedId={currentUserId} onChange={setCurrentUserId} />
         </div>
@@ -884,11 +933,12 @@ function App() {
       <main className="main-pane">
         <header className="topbar">
           <div>
-            <p className="eyebrow">Kooli konto</p>
-            <h2>{currentUser.name}</h2>
+            <p className="eyebrow">Kool</p>
+            <h2>{appData.account.name}</h2>
+            <p className="topbar-subtitle">{currentUser.name}</p>
           </div>
           <div className="topbar-actions">
-            <div className="notifications-wrap">
+            <div className="notifications-wrap" ref={notificationsRef}>
               <button
                 className={`button button-secondary notification-trigger${unreadNotifications.length ? " notification-trigger-active" : ""}`}
                 onClick={() => setNotificationsOpen((previous) => !previous)}
@@ -1044,7 +1094,7 @@ function App() {
   );
 }
 
-function HomePage({ instances, onOpenInstance, onOpenAll, onOpenArchive, onOpenStart, usersById, currentUser }) {
+function HomePage({ instances, onOpenInstance, onOpenAll, onOpenStart, usersById, currentUser }) {
   return (
     <div className="page-stack">
       <div className="page-header">
@@ -1054,9 +1104,6 @@ function HomePage({ instances, onOpenInstance, onOpenAll, onOpenArchive, onOpenS
           <p>Siin on {currentUser.name.split(" ")[0]} töövood, mis vajavad lähiajal tähelepanu.</p>
         </div>
         <div className="header-actions">
-          <Button kind="secondary" onClick={onOpenArchive} type="button">
-            Lõpetatud tööprotsessid
-          </Button>
           <Button kind="secondary" onClick={onOpenAll} type="button">
             Kõik aktiivsed tööprotsessid
           </Button>
@@ -1157,6 +1204,14 @@ function AllActivePage({ instances, users, usersById, filters, onFilterChange, o
             value={filters.activeDate}
           />
         </label>
+        <label className="toggle-row compact-toggle">
+          <input
+            checked={filters.activeShowFinished}
+            onChange={(event) => onFilterChange("activeShowFinished", event.target.checked)}
+            type="checkbox"
+          />
+          <span>Näita lõpetatuid</span>
+        </label>
       </div>
 
       {instances.length ? (
@@ -1173,7 +1228,12 @@ function AllActivePage({ instances, users, usersById, filters, onFilterChange, o
             const progress = getInstanceProgress(instance);
             const dueStatus = getDueDateStatus(instance.dueDate, today);
             return (
-              <button className="table-row table-grid" key={instance.id} onClick={() => onOpenInstance(instance.id)} type="button">
+              <button
+                className={`table-row table-grid${instance.archivedView ? " table-row-completed" : ""}`}
+                key={instance.id}
+                onClick={() => onOpenInstance(instance)}
+                type="button"
+              >
                 <strong>{instance.name}</strong>
                 <span>{instance.templateName}</span>
                 <UserPill user={usersById[instance.assignedUserId]} />
@@ -1198,7 +1258,7 @@ function AllActivePage({ instances, users, usersById, filters, onFilterChange, o
   );
 }
 
-function TemplateLibraryPage({ templates, onEditTemplate, onOpenStart, onCreateTemplate }) {
+function TemplateLibraryPage({ templates, onEditTemplate, onViewTemplate, onOpenStart, onCreateTemplate, onDeleteTemplate }) {
   return (
     <div className="page-stack">
       <div className="page-header">
@@ -1232,9 +1292,15 @@ function TemplateLibraryPage({ templates, onEditTemplate, onOpenStart, onCreateT
                 <Button kind="secondary" onClick={() => onOpenStart(template.id)} type="button">
                   Alusta
                 </Button>
+                <Button kind="secondary" onClick={() => onViewTemplate(template.id)} type="button">
+                  Vaata malli
+                </Button>
                 <Button kind="secondary" onClick={() => onEditTemplate(template.id)} type="button">
                   Muuda malli
                 </Button>
+                <button className="button button-secondary button-danger" onClick={() => onDeleteTemplate(template.id)} type="button">
+                  Kustuta mall
+                </button>
                 <button className="button button-disabled" title="Tulemas" type="button" disabled>
                   Jaga tööprotsessi KOV-iga
                 </button>
@@ -1247,7 +1313,54 @@ function TemplateLibraryPage({ templates, onEditTemplate, onOpenStart, onCreateT
   );
 }
 
-function TemplateEditorPage({ template, onBack, onSave }) {
+function TemplateViewPage({ template, onBack, onEdit, onStart }) {
+  return (
+    <div className="page-stack">
+      <div className="page-header">
+        <div>
+          <button className="back-link" onClick={onBack} type="button">
+            ← Tagasi mallide kogusse
+          </button>
+          <p className="eyebrow">Mallivaade</p>
+          <h2>{template.title}</h2>
+          <p>{template.description}</p>
+          <div className="meta-row">
+            <span className="tag">{template.category}</span>
+            <span className="meta-chip">{template.currentVersion}</span>
+            <span className="meta-chip">{template.steps.length} sammu</span>
+          </div>
+        </div>
+        <div className="header-actions">
+          <Button kind="secondary" onClick={onStart} type="button">
+            Alusta
+          </Button>
+          <Button kind="secondary" onClick={onEdit} type="button">
+            Muuda malli
+          </Button>
+        </div>
+      </div>
+
+      <div className="steps-stack">
+        {template.steps.map((step, index) => (
+          <article className="run-step-card" key={step.id}>
+            <div className="run-step-head">
+              <div className="step-number">{index + 1}</div>
+              <div className="step-main">
+                <div className="step-main-row">
+                  <strong>{step.title}</strong>
+                  <span className="toggle-pill">{step.required ? "Kohustuslik" : "Valikuline"}</span>
+                </div>
+                <RunBlocks blocks={step.blocks} readOnly />
+              </div>
+            </div>
+          </article>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function TemplateEditorPage({ template, onBack, onSave, onDelete }) {
   const [draft, setDraft] = useState(() => cloneData(template));
   const [draggedStepId, setDraggedStepId] = useState("");
   const [savedAt, setSavedAt] = useState(template.lastSavedAt);
@@ -1340,6 +1453,9 @@ function TemplateEditorPage({ template, onBack, onSave }) {
           <p>Hoia sammud lühikesed, selged ja korduvkasutatavad. Live tööprotsessid ei muutu tagasiulatuvalt.</p>
         </div>
         <div className="header-actions">
+          <button className="button button-secondary button-danger" onClick={onDelete} type="button">
+            Kustuta mall
+          </button>
           <button className="button button-disabled" title="Tulemas" type="button" disabled>
             Määra sammud automaatselt rollidele
           </button>

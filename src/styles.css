@@ -111,6 +111,16 @@ a {
   gap: 10px;
 }
 
+.sidebar-school-name h2 {
+  margin: 0;
+  font-size: 1.1rem;
+  letter-spacing: -0.02em;
+}
+
+.sidebar-user-section {
+  margin-top: auto;
+}
+
 .nav-list {
   display: flex;
   flex-direction: column;
@@ -158,6 +168,11 @@ a {
 .topbar h2 {
   margin: 0;
   font-size: 1.1rem;
+}
+
+.topbar-subtitle {
+  margin: 4px 0 0;
+  color: var(--text-soft);
 }
 
 .content-pane {
@@ -317,6 +332,17 @@ a {
   background: var(--surface-muted);
 }
 
+.button-danger {
+  color: var(--danger);
+  border-color: #e8d6d6;
+  background: #fffafa;
+}
+
+.button-danger:hover:not(:disabled) {
+  background: #fff3f3;
+  border-color: #ddbcbc;
+}
+
 .button-disabled,
 .button:disabled {
   opacity: 0.6;
@@ -333,6 +359,23 @@ a {
   border: none;
   background: transparent;
   color: var(--text-soft);
+}
+
+.back-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: white;
+  color: var(--text);
+  box-shadow: 0 8px 18px rgba(26, 42, 38, 0.05);
+}
+
+.back-link:hover {
+  background: var(--surface-muted);
+  border-color: var(--border-strong);
 }
 
 .drag-handle {
@@ -486,6 +529,12 @@ a {
 
 .toggle-row input {
   accent-color: var(--accent-strong);
+}
+
+.compact-toggle {
+  align-self: end;
+  min-height: 46px;
+  padding: 0 6px;
 }
 
 .compact-field {
@@ -677,6 +726,17 @@ a {
   background: var(--surface-muted);
 }
 
+.table-row-completed {
+  background: #f7f7f7;
+}
+
+.table-row-completed strong,
+.table-row-completed span,
+.table-row-completed .user-pill span,
+.table-row-completed .avatar {
+  color: #a3a9a8;
+}
+
 .due-date {
   font-weight: 600;
 }
@@ -697,11 +757,23 @@ a {
   color: var(--text-soft);
 }
 
+.table-row-completed .due-date,
+.table-row-completed .due-date-safe,
+.table-row-completed .due-date-warning,
+.table-row-completed .due-date-danger,
+.table-row-completed .due-date-neutral {
+  color: #a3a9a8;
+}
+
 .template-card {
   display: flex;
   flex-direction: column;
   justify-content: space-between;
   gap: 18px;
+}
+
+.template-card .inline-actions .button-disabled {
+  display: none;
 }
 
 .template-card-top {
@@ -1017,13 +1089,16 @@ a {
   inset: 0;
   display: grid;
   place-items: center;
-  padding: 24px;
+  padding: clamp(12px, 3vw, 24px);
+  overflow: auto;
   background: rgba(28, 36, 33, 0.28);
 }
 
 .modal-card {
-  width: min(560px, 100%);
+  width: min(560px, calc(100vw - 24px));
+  max-height: calc(100dvh - 24px);
   padding: 24px;
+  overflow: auto;
 }
 
 .modal-head {

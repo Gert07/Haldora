@@ -514,7 +514,7 @@ export const initialData = {
   today,
   account: {
     id: "school-pohjataht",
-    name: "Põhjatähe Kool",
+    name: "Kännu kool",
     helperText:
       "Kõik mallid, kommentaarid ja tööprotsessid kuuluvad ainult selle kooli kontole. Teistel koolidel puudub nähtavus.",
   },
