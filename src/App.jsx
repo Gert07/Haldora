@@ -46,6 +46,52 @@ function formatDateTime(value) {
   }).format(new Date(value));
 }
 
+function extractMentionedUserIds(text, users) {
+  const mentioned = users
+    .filter((user) => text.includes(`@${user.name}`))
+    .map((user) => user.id);
+
+  return [...new Set(mentioned)];
+}
+
+function buildSeedNotifications(data) {
+  const notifications = [];
+
+  const collectFromInstances = (instances, archived) => {
+    instances.forEach((instance) => {
+      instance.steps.forEach((step) => {
+        step.comments.forEach((comment) => {
+          const mentionedUserIds = extractMentionedUserIds(comment.text, data.users).filter(
+            (userId) => userId !== comment.userId,
+          );
+
+          mentionedUserIds.forEach((userId) => {
+            notifications.push({
+              id: makeId("notification"),
+              userId,
+              actorUserId: comment.userId,
+              instanceId: instance.id,
+              instanceName: instance.name,
+              instanceArchived: archived,
+              stepId: step.id,
+              stepTitle: step.title,
+              commentId: comment.id,
+              commentText: comment.text,
+              createdAt: comment.timestamp,
+              readAt: null,
+            });
+          });
+        });
+      });
+    });
+  };
+
+  collectFromInstances(data.activeInstances, false);
+  collectFromInstances(data.archivedInstances, true);
+
+  return notifications;
+}
+
 function cloneTemplateBlocks(blocks) {
   return blocks.map((block) => {
     if (block.type === "checklist") {
@@ -258,9 +304,14 @@ function PersonSelect({ users, selectedId, onChange, placeholder = "Kõik kasuta
 }
 
 function App() {
-  const [appData, setAppData] = useState(() => cloneData(initialData));
+  const [appData, setAppData] = useState(() => {
+    const seeded = cloneData(initialData);
+    seeded.notifications = buildSeedNotifications(seeded);
+    return seeded;
+  });
   const [currentUserId, setCurrentUserId] = useState(initialData.users[0].id);
   const [currentView, setCurrentView] = useState({ name: "home" });
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [startModal, setStartModal] = useState({
     open: false,
     templateId: initialData.templates[0].id,
@@ -279,6 +330,10 @@ function App() {
   const currentUser = appData.users.find((user) => user.id === currentUserId);
   const templatesById = Object.fromEntries(appData.templates.map((template) => [template.id, template]));
   const usersById = Object.fromEntries(appData.users.map((user) => [user.id, user]));
+  const currentUserNotifications = [...(appData.notifications ?? [])]
+    .filter((notification) => notification.userId === currentUserId)
+    .sort((left, right) => new Date(right.createdAt) - new Date(left.createdAt));
+  const unreadNotifications = currentUserNotifications.filter((notification) => !notification.readAt);
 
   const myActiveInstances = appData.activeInstances.filter((instance) => instance.assignedUserId === currentUserId);
   const filteredActiveInstances = appData.activeInstances.filter((instance) => {
@@ -317,6 +372,50 @@ function App() {
 
   function navigate(name, extra = {}) {
     setCurrentView({ name, ...extra });
+  }
+
+  function markNotificationRead(notificationId) {
+    setAppData((previous) => ({
+      ...previous,
+      notifications: (previous.notifications ?? []).map((notification) =>
+        notification.id === notificationId && !notification.readAt
+          ? { ...notification, readAt: new Date().toISOString() }
+          : notification,
+      ),
+    }));
+  }
+
+  function markAllNotificationsRead() {
+    setAppData((previous) => ({
+      ...previous,
+      notifications: (previous.notifications ?? []).map((notification) =>
+        notification.userId === currentUserId && !notification.readAt
+          ? { ...notification, readAt: new Date().toISOString() }
+          : notification,
+      ),
+    }));
+  }
+
+  function openNotification(notification) {
+    markNotificationRead(notification.id);
+    setNotificationsOpen(false);
+
+    const isArchived =
+      notification.instanceArchived ||
+      appData.archivedInstances.some((instance) => instance.id === notification.instanceId);
+
+    if (isArchived) {
+      navigate("archive-instance", {
+        instanceId: notification.instanceId,
+        stepId: notification.stepId,
+      });
+      return;
+    }
+
+    navigate("run-instance", {
+      instanceId: notification.instanceId,
+      stepId: notification.stepId,
+    });
   }
 
   function openStartModal(templateId = appData.templates[0]?.id) {
@@ -470,6 +569,71 @@ function App() {
     navigate("archive-instance", { instanceId });
   }
 
+  function addCommentWithNotifications(instanceId, stepId, text, authorUserId) {
+    const timestamp = new Date().toISOString();
+    const commentId = makeId("comment");
+
+    setAppData((previous) => {
+      const targetInstance = previous.activeInstances.find((instance) => instance.id === instanceId);
+
+      if (!targetInstance) {
+        return previous;
+      }
+
+      const targetStep = targetInstance.steps.find((step) => step.id === stepId);
+
+      if (!targetStep) {
+        return previous;
+      }
+
+      const comment = {
+        id: commentId,
+        userId: authorUserId,
+        timestamp,
+        text,
+      };
+
+      const mentionedUserIds = extractMentionedUserIds(text, previous.users).filter(
+        (userId) => userId !== authorUserId,
+      );
+
+      const notifications = mentionedUserIds.map((userId) => ({
+        id: makeId("notification"),
+        userId,
+        actorUserId: authorUserId,
+        instanceId: targetInstance.id,
+        instanceName: targetInstance.name,
+        instanceArchived: false,
+        stepId: targetStep.id,
+        stepTitle: targetStep.title,
+        commentId,
+        commentText: text,
+        createdAt: timestamp,
+        readAt: null,
+      }));
+
+      return {
+        ...previous,
+        activeInstances: previous.activeInstances.map((instance) =>
+          instance.id !== instanceId
+            ? instance
+            : {
+                ...instance,
+                steps: instance.steps.map((step) =>
+                  step.id !== stepId
+                    ? step
+                    : {
+                        ...step,
+                        comments: [...step.comments, comment],
+                      },
+                ),
+              },
+        ),
+        notifications: [...(previous.notifications ?? []), ...notifications],
+      };
+    });
+  }
+
   function renderPage() {
     if (currentView.name === "home") {
       return (
@@ -526,9 +690,11 @@ function App() {
           key={selectedActiveInstance.id}
           instance={selectedActiveInstance}
           currentUserId={currentUserId}
+          initialStepId={currentView.stepId}
           users={appData.users}
           usersById={usersById}
           onBack={() => navigate("all-active")}
+          onAddComment={(stepId, text) => addCommentWithNotifications(selectedActiveInstance.id, stepId, text, currentUserId)}
           onUpdateInstance={(updater) => updateInstance(selectedActiveInstance.id, updater)}
           onComplete={() => completeInstance(selectedActiveInstance.id)}
         />
@@ -554,6 +720,7 @@ function App() {
           key={selectedArchivedInstance.id}
           instance={selectedArchivedInstance}
           currentUserId={currentUserId}
+          initialStepId={currentView.stepId}
           users={appData.users}
           usersById={usersById}
           readOnly
@@ -650,6 +817,57 @@ function App() {
             <h2>{currentUser.name}</h2>
           </div>
           <div className="topbar-actions">
+            <div className="notifications-wrap">
+              <button
+                className={`button button-secondary notification-trigger${unreadNotifications.length ? " notification-trigger-active" : ""}`}
+                onClick={() => setNotificationsOpen((previous) => !previous)}
+                type="button"
+              >
+                Teavitused
+                {unreadNotifications.length ? <span className="notification-badge">{unreadNotifications.length}</span> : null}
+              </button>
+              {notificationsOpen ? (
+                <div className="notifications-panel">
+                  <div className="notifications-panel-head">
+                    <div>
+                      <p className="eyebrow">Mainimised</p>
+                      <h3>Teavitused</h3>
+                    </div>
+                    {unreadNotifications.length ? (
+                      <button className="ghost-link" onClick={markAllNotificationsRead} type="button">
+                        Märgi kõik loetuks
+                      </button>
+                    ) : null}
+                  </div>
+                  {currentUserNotifications.length ? (
+                    <div className="notifications-list">
+                      {currentUserNotifications.map((notification) => (
+                        <button
+                          className={`notification-item${notification.readAt ? "" : " notification-item-unread"}`}
+                          key={notification.id}
+                          onClick={() => openNotification(notification)}
+                          type="button"
+                        >
+                          <div className="notification-item-top">
+                            <UserPill user={usersById[notification.actorUserId]} />
+                            <span>{formatDateTime(notification.createdAt)}</span>
+                          </div>
+                          <strong>{notification.instanceName}</strong>
+                          <p>
+                            Mainis sind sammus <span className="notification-step">{notification.stepTitle}</span>
+                          </p>
+                          <p className="notification-quote">{notification.commentText}</p>
+                        </button>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="notifications-empty">
+                      <p className="muted-copy">Kui keegi mainib sind kommentaaris, ilmub teavitus siia.</p>
+                    </div>
+                  )}
+                </div>
+              ) : null}
+            </div>
             <UserPill user={currentUser} />
           </div>
         </header>
@@ -1562,13 +1780,23 @@ function WorkflowRunPage({
   users,
   usersById,
   currentUserId,
+  initialStepId,
   onBack,
   onUpdateInstance,
+  onAddComment,
   onComplete,
   readOnly = false,
 }) {
-  const [expandedComments, setExpandedComments] = useState({});
+  const [expandedComments, setExpandedComments] = useState(() =>
+    initialStepId ? { [initialStepId]: true } : {},
+  );
   const progress = getInstanceProgress(instance);
+
+  useEffect(() => {
+    if (initialStepId) {
+      setExpandedComments((previous) => ({ ...previous, [initialStepId]: true }));
+    }
+  }, [initialStepId]);
 
   function updateStep(stepId, updater) {
     onUpdateInstance((previous) => ({
@@ -1712,20 +1940,7 @@ function WorkflowRunPage({
                     step={step}
                     users={users}
                     usersById={usersById}
-                    onAddComment={(text) =>
-                      updateStep(step.id, (previous) => ({
-                        ...previous,
-                        comments: [
-                          ...previous.comments,
-                          {
-                            id: makeId("comment"),
-                            userId: currentUserId,
-                            timestamp: new Date().toISOString(),
-                            text,
-                          },
-                        ],
-                      }))
-                    }
+                    onAddComment={(text) => onAddComment?.(step.id, text)}
                   />
                 ) : null}
               </div>
@@ -1851,9 +2066,7 @@ function CommentSection({ step, users, usersById, onAddComment, readOnly }) {
             </div>
           ) : null}
           <div className="comment-actions">
-            <button className="button button-disabled" title="Tulemas" type="button" disabled>
-              Teavita mainituid e-postiga
-            </button>
+            <span className="helper-chip">@mainimine saadab rakenduse teavituse</span>
             <Button
               disabled={!draft.trim()}
               onClick={() => {

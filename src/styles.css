@@ -64,6 +64,11 @@ a {
   display: flex;
   flex-direction: column;
   gap: 24px;
+  position: sticky;
+  top: 0;
+  align-self: start;
+  height: 100vh;
+  overflow-y: auto;
   padding: 28px 24px;
   background: rgba(255, 255, 255, 0.82);
   border-right: 1px solid rgba(223, 230, 230, 0.95);
@@ -185,6 +190,103 @@ a {
   flex-wrap: wrap;
   gap: 12px;
   align-items: center;
+}
+
+.notifications-wrap {
+  position: relative;
+}
+
+.notification-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.notification-trigger-active {
+  border-color: #d9e8e3;
+  background: var(--accent-soft);
+}
+
+.notification-badge {
+  min-width: 22px;
+  height: 22px;
+  display: inline-grid;
+  place-items: center;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: white;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.notifications-panel {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  z-index: 30;
+  width: min(420px, calc(100vw - 40px));
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  background: white;
+  box-shadow: var(--shadow);
+}
+
+.notifications-panel-head,
+.notification-item-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.notifications-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 14px;
+  max-height: 420px;
+  overflow-y: auto;
+}
+
+.notification-item {
+  width: 100%;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: white;
+  text-align: left;
+}
+
+.notification-item:hover {
+  background: var(--surface-muted);
+}
+
+.notification-item-unread {
+  border-color: #d9e8e3;
+  background: #f5fbf8;
+}
+
+.notification-item p {
+  margin: 8px 0 0;
+  color: var(--text-soft);
+}
+
+.notification-step {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.notification-quote {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.notifications-empty {
+  padding-top: 10px;
 }
 
 .button {
@@ -344,7 +446,8 @@ a {
 .tag,
 .meta-chip,
 .toggle-pill,
-.summary-chip {
+.summary-chip,
+.helper-chip {
   display: inline-flex;
   align-items: center;
   gap: 8px;
