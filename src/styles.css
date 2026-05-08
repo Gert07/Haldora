@@ -470,6 +470,24 @@ a {
   gap: 8px;
 }
 
+.recurring-field {
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--surface-muted);
+}
+
+.toggle-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 500;
+}
+
+.toggle-row input {
+  accent-color: var(--accent-strong);
+}
+
 .compact-field {
   min-width: 190px;
 }
@@ -623,7 +641,7 @@ a {
 
 .table-grid {
   display: grid;
-  grid-template-columns: minmax(240px, 1.2fr) minmax(180px, 1fr) minmax(170px, 0.9fr) minmax(160px, 0.8fr) minmax(140px, 0.7fr);
+  grid-template-columns: minmax(220px, 1.2fr) minmax(170px, 0.9fr) minmax(170px, 0.9fr) minmax(150px, 0.8fr) minmax(130px, 0.7fr) minmax(130px, 0.7fr);
   align-items: center;
   gap: 16px;
 }
@@ -657,6 +675,26 @@ a {
 
 .table-row:hover {
   background: var(--surface-muted);
+}
+
+.due-date {
+  font-weight: 600;
+}
+
+.table-row .due-date-safe {
+  color: #3f7a52;
+}
+
+.table-row .due-date-warning {
+  color: #a07a11;
+}
+
+.table-row .due-date-danger {
+  color: #b94b4b;
+}
+
+.table-row .due-date-neutral {
+  color: var(--text-soft);
 }
 
 .template-card {
@@ -702,6 +740,11 @@ a {
 .step-editor-top,
 .run-step-head {
   align-items: flex-start;
+}
+
+.step-editor-top > div:first-child {
+  flex: 1;
+  min-width: 0;
 }
 
 .step-title-input {

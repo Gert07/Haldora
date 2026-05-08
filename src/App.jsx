@@ -46,6 +46,61 @@ function formatDateTime(value) {
   }).format(new Date(value));
 }
 
+function getDueDateStatus(dueDate, today) {
+  if (!dueDate) {
+    return "neutral";
+  }
+
+  const due = new Date(`${dueDate}T00:00:00`);
+  const current = new Date(`${today}T00:00:00`);
+  const diffDays = Math.round((due - current) / 86400000);
+
+  if (diffDays <= 0) {
+    return "danger";
+  }
+
+  if (diffDays <= 2) {
+    return "warning";
+  }
+
+  return "safe";
+}
+
+function inferRecurrenceUnit(template) {
+  const title = (template?.title ?? "").toLowerCase();
+  const category = (template?.category ?? "").toLowerCase();
+
+  if (title.includes("iganädal") || title.includes("iganadal")) {
+    return "week";
+  }
+
+  if (category.includes("igakuine") || title.includes("igakuis")) {
+    return "month";
+  }
+
+  if (category.includes("iga-aastane") || category.includes("igaaastane")) {
+    return "year";
+  }
+
+  return "";
+}
+
+function getRecurrenceLabel(unit) {
+  if (unit === "week") {
+    return "Igal nädalal";
+  }
+
+  if (unit === "month") {
+    return "Igal kuul";
+  }
+
+  if (unit === "year") {
+    return "Igal aastal";
+  }
+
+  return "Korduv";
+}
+
 function extractMentionedUserIds(text, users) {
   const mentioned = users
     .filter((user) => text.includes(`@${user.name}`))
@@ -317,6 +372,8 @@ function App() {
     templateId: initialData.templates[0].id,
     assigneeId: initialData.users[0].id,
     name: "",
+    repeatEnabled: false,
+    repeatUnit: inferRecurrenceUnit(initialData.templates[0]),
   });
   const [filters, setFilters] = useState({
     activeUserId: "",
@@ -420,11 +477,14 @@ function App() {
 
   function openStartModal(templateId = appData.templates[0]?.id) {
     const template = appData.templates.find((item) => item.id === templateId) ?? appData.templates[0];
+    const defaultRepeatUnit = inferRecurrenceUnit(template);
     setStartModal({
       open: true,
       templateId: template.id,
       assigneeId: currentUserId,
       name: "",
+      repeatEnabled: Boolean(defaultRepeatUnit),
+      repeatUnit: defaultRepeatUnit,
     });
   }
 
@@ -453,6 +513,16 @@ function App() {
       startedAt: appData.today,
       dueDate: "",
       finishedAt: null,
+      recurrence:
+        startModal.repeatEnabled && startModal.repeatUnit
+          ? {
+              enabled: true,
+              unit: startModal.repeatUnit,
+            }
+          : {
+              enabled: false,
+              unit: "",
+            },
       steps: buildInstanceSteps(template.steps),
     };
 
@@ -656,6 +726,7 @@ function App() {
           instances={filteredActiveInstances}
           onFilterChange={(key, value) => setFilters((previous) => ({ ...previous, [key]: value }))}
           onOpenInstance={(instanceId) => navigate("run-instance", { instanceId })}
+          today={appData.today}
           users={appData.users}
           usersById={usersById}
         />
@@ -731,12 +802,12 @@ function App() {
     }
 
     return (
-      <EmptyState
-        title="Valitud vaadet ei leitud"
-        text="Mine tagasi avalehele või ava protsesside kogu, et jätkata sealt, kus pooleli jäid."
-        action={
-          <Button kind="secondary" onClick={() => navigate("home")} type="button">
-            Tagasi avalehele
+        <EmptyState
+          title="Valitud vaadet ei leitud"
+        text="Mine tagasi avalehele või ava mallide kogu, et jätkata sealt, kus pooleli jäid."
+          action={
+            <Button kind="secondary" onClick={() => navigate("home")} type="button">
+              Tagasi avalehele
           </Button>
         }
       />
@@ -774,7 +845,7 @@ function App() {
               onClick={() => navigate("templates")}
               type="button"
             >
-              Protsesside kogu
+              Mallide kogu
             </button>
             <button
               className={`nav-item${currentView.name === "archive" || currentView.name === "archive-instance" ? " nav-item-active" : ""}`}
@@ -895,7 +966,18 @@ function App() {
             className="input"
             value={startModal.templateId}
             onChange={(event) =>
-              setStartModal((previous) => ({ ...previous, templateId: event.target.value }))
+              setStartModal((previous) => {
+                const nextTemplate =
+                  appData.templates.find((template) => template.id === event.target.value) ?? appData.templates[0];
+                const nextRepeatUnit = inferRecurrenceUnit(nextTemplate);
+
+                return {
+                  ...previous,
+                  templateId: event.target.value,
+                  repeatEnabled: nextRepeatUnit ? true : previous.repeatEnabled,
+                  repeatUnit: nextRepeatUnit || previous.repeatUnit,
+                };
+              })
             }
           >
             {appData.templates.map((template) => (
@@ -924,6 +1006,39 @@ function App() {
             users={appData.users}
           />
         </label>
+        <div className="field recurring-field">
+          <label className="toggle-row">
+            <input
+              checked={startModal.repeatEnabled}
+              onChange={(event) =>
+                setStartModal((previous) => ({
+                  ...previous,
+                  repeatEnabled: event.target.checked,
+                  repeatUnit: previous.repeatUnit || inferRecurrenceUnit(selectedTemplateForModal) || "month",
+                }))
+              }
+              type="checkbox"
+            />
+            <span>Käivita see tööprotsess pärast lõpetamist uuesti</span>
+          </label>
+          <select
+            className="input"
+            disabled={!startModal.repeatEnabled}
+            onChange={(event) => setStartModal((previous) => ({ ...previous, repeatUnit: event.target.value }))}
+            value={startModal.repeatUnit || inferRecurrenceUnit(selectedTemplateForModal) || "month"}
+          >
+            <option value="week">Igal nädalal</option>
+            <option value="month">Igal kuul</option>
+            <option value="year">Igal aastal</option>
+          </select>
+          <p className="muted-copy">
+            {startModal.repeatEnabled
+              ? `Pärast lõpetamist luuakse sellele tööprotsessile kordusreegel: ${getRecurrenceLabel(
+                  startModal.repeatUnit || inferRecurrenceUnit(selectedTemplateForModal) || "month",
+                ).toLowerCase()}.`
+              : "Kui see on korduv protsess, saad selle juba käivitamisel panna hiljem sama rütmiga uuesti alustuma."}
+          </p>
+        </div>
       </Modal>
     </div>
   );
@@ -962,6 +1077,11 @@ function HomePage({ instances, onOpenInstance, onOpenAll, onOpenArchive, onOpenS
                   <div>
                     <h3>{instance.name}</h3>
                     <p>{instance.templateName}</p>
+                    {instance.recurrence?.enabled ? (
+                      <div className="meta-row">
+                        <span className="meta-chip">{getRecurrenceLabel(instance.recurrence.unit)}</span>
+                      </div>
+                    ) : null}
                   </div>
                   <Avatar user={user} />
                 </div>
@@ -996,7 +1116,7 @@ function HomePage({ instances, onOpenInstance, onOpenAll, onOpenArchive, onOpenS
   );
 }
 
-function AllActivePage({ instances, users, usersById, filters, onFilterChange, onOpenInstance }) {
+function AllActivePage({ instances, users, usersById, filters, onFilterChange, onOpenInstance, today }) {
   return (
     <div className="page-stack">
       <div className="page-header">
@@ -1047,9 +1167,11 @@ function AllActivePage({ instances, users, usersById, filters, onFilterChange, o
             <span>Vastutaja</span>
             <span>Edenemine</span>
             <span>Alustatud</span>
+            <span>Tähtaeg</span>
           </div>
           {instances.map((instance) => {
             const progress = getInstanceProgress(instance);
+            const dueStatus = getDueDateStatus(instance.dueDate, today);
             return (
               <button className="table-row table-grid" key={instance.id} onClick={() => onOpenInstance(instance.id)} type="button">
                 <strong>{instance.name}</strong>
@@ -1059,6 +1181,9 @@ function AllActivePage({ instances, users, usersById, filters, onFilterChange, o
                   {progress.done}/{progress.total} sammu tehtud
                 </span>
                 <span>{formatDate(instance.startedAt)}</span>
+                <span className={`due-date due-date-${dueStatus}`}>
+                  {instance.dueDate ? formatDate(instance.dueDate) : "Puudub"}
+                </span>
               </button>
             );
           })}
@@ -1079,7 +1204,7 @@ function TemplateLibraryPage({ templates, onEditTemplate, onOpenStart, onCreateT
       <div className="page-header">
         <div>
           <p className="eyebrow">Mallid</p>
-          <h2>Protsesside kogu</h2>
+          <h2>Mallide kogu</h2>
           <p>Ühes kohas kõik korduvate kooli protsesside mallid, mida saab jooksvalt täiendada ja kohe käivitada.</p>
         </div>
         <Button onClick={onCreateTemplate} type="button">
