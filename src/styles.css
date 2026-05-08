@@ -233,6 +233,19 @@ a {
   color: var(--text-soft);
 }
 
+.drag-handle {
+  padding: 8px 10px;
+  border: 1px dashed var(--border-strong);
+  border-radius: 10px;
+  background: white;
+  color: var(--text-soft);
+  cursor: grab;
+}
+
+.drag-handle:active {
+  cursor: grabbing;
+}
+
 .danger {
   color: var(--danger);
 }
@@ -628,6 +641,74 @@ a {
   gap: 12px;
 }
 
+.rich-text-editor,
+.link-inline-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.format-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.toolbar-button,
+.toolbar-color {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 38px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: white;
+  color: var(--text-soft);
+}
+
+.toolbar-button:hover,
+.toolbar-color:hover {
+  background: var(--surface-muted);
+  color: var(--text);
+}
+
+.toolbar-highlight {
+  background: #fff7cc;
+  border-color: #eadf99;
+  color: #6b5a00;
+}
+
+.rich-text-surface {
+  min-height: 140px;
+  line-height: 1.6;
+  direction: ltr;
+  text-align: left;
+}
+
+.rich-text-surface:empty::before {
+  content: "Kirjuta sammule selgitus või kontekst.";
+  color: var(--text-soft);
+}
+
+.rich-text-surface ul,
+.rich-text-surface ol,
+.run-rich-text ul,
+.run-rich-text ol {
+  padding-left: 22px;
+}
+
+.rich-text-surface a,
+.run-rich-text a {
+  color: var(--blue-text);
+}
+
+.rich-text-surface [style*="background-color"],
+.run-rich-text [style*="background-color"] {
+  padding: 0 2px;
+  border-radius: 3px;
+}
+
 .fake-checkbox {
   width: 18px;
   height: 18px;
@@ -721,6 +802,20 @@ a {
 .run-paragraph {
   margin: 0;
   color: var(--text-soft);
+}
+
+.run-rich-text {
+  color: var(--text-soft);
+  direction: ltr;
+  text-align: left;
+}
+
+.run-rich-text p {
+  margin: 0 0 10px;
+}
+
+.run-rich-text p:last-child {
+  margin-bottom: 0;
 }
 
 .run-checklist {

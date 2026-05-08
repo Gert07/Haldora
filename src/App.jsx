@@ -121,6 +121,27 @@ function escapeForRegex(value) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
+function escapeHtml(value) {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
+function paragraphHtml(block) {
+  if (block.html) {
+    return block.html;
+  }
+
+  if (!block.text) {
+    return "";
+  }
+
+  return `<p>${escapeHtml(block.text)}</p>`;
+}
+
 function Avatar({ user, small = false }) {
   return (
     <div className={`avatar avatar-${user.accent}${small ? " avatar-small" : ""}`}>
@@ -1021,18 +1042,16 @@ function TemplateEditorPage({ template, onBack, onSave }) {
           </label>
 
           <div className="steps-stack">
-            {draft.steps.map((step) => (
-              <article
-                className="step-editor-card"
-                draggable
-                key={step.id}
-                onDragOver={(event) => event.preventDefault()}
-                onDragStart={() => setDraggedStepId(step.id)}
-                onDrop={() => moveStep(draggedStepId, step.id)}
-              >
-                <div className="step-editor-top">
-                  <div>
-                    <p className="eyebrow">Samm</p>
+              {draft.steps.map((step) => (
+                <article
+                  className="step-editor-card"
+                  key={step.id}
+                  onDragOver={(event) => event.preventDefault()}
+                  onDrop={() => moveStep(draggedStepId, step.id)}
+                >
+                  <div className="step-editor-top">
+                    <div>
+                      <p className="eyebrow">Samm</p>
                     <input
                       className="step-title-input"
                       onChange={(event) =>
@@ -1043,6 +1062,14 @@ function TemplateEditorPage({ template, onBack, onSave }) {
                     />
                   </div>
                   <div className="step-editor-actions">
+                    <button
+                      className="drag-handle"
+                      draggable
+                      onDragStart={() => setDraggedStepId(step.id)}
+                      type="button"
+                    >
+                      Lohista
+                    </button>
                     <label className="toggle-pill">
                       <input
                         checked={step.required}
@@ -1185,12 +1212,15 @@ function StepBlockEditor({ blocks, onChange }) {
           </div>
 
           {block.type === "paragraph" ? (
-            <textarea
-              className="input textarea block-textarea"
-              onChange={(event) => updateBlock(block.id, (previous) => ({ ...previous, text: event.target.value }))}
-              placeholder="Kirjuta sammule selgitus või kontekst."
-              rows={3}
-              value={block.text}
+            <RichTextBlockEditor
+              block={block}
+              onChange={(nextHtml, nextText) =>
+                updateBlock(block.id, (previous) => ({
+                  ...previous,
+                  html: nextHtml,
+                  text: nextText,
+                }))
+              }
             />
           ) : null}
 
@@ -1290,6 +1320,239 @@ function StepBlockEditor({ blocks, onChange }) {
           </div>
         ) : null}
       </div>
+    </div>
+  );
+}
+
+function RichTextBlockEditor({ block, onChange }) {
+  const editorRef = useRef(null);
+  const selectionRef = useRef(null);
+  const lastSyncedHtmlRef = useRef("");
+  const [linkDraft, setLinkDraft] = useState({ open: false, url: "", newTab: true });
+
+  useEffect(() => {
+    if (!editorRef.current) {
+      return;
+    }
+
+    const nextHtml = paragraphHtml(block);
+    if (lastSyncedHtmlRef.current !== nextHtml && editorRef.current.innerHTML !== nextHtml) {
+      editorRef.current.innerHTML = nextHtml;
+    }
+    lastSyncedHtmlRef.current = nextHtml;
+  }, [block]);
+
+  function syncContent() {
+    if (!editorRef.current) {
+      return;
+    }
+
+    const nextHtml = editorRef.current.innerHTML;
+    lastSyncedHtmlRef.current = nextHtml;
+    onChange(nextHtml, editorRef.current.textContent ?? "");
+  }
+
+  function saveSelection() {
+    const selection = window.getSelection();
+
+    if (!selection || selection.rangeCount === 0 || !editorRef.current) {
+      return;
+    }
+
+    const range = selection.getRangeAt(0);
+
+    if (editorRef.current.contains(range.commonAncestorContainer)) {
+      selectionRef.current = range.cloneRange();
+    }
+  }
+
+  function restoreSelection() {
+    const selection = window.getSelection();
+
+    if (!selection || !selectionRef.current) {
+      return;
+    }
+
+    selection.removeAllRanges();
+    selection.addRange(selectionRef.current);
+  }
+
+  function runCommand(command, value = null) {
+    editorRef.current?.focus();
+    restoreSelection();
+    document.execCommand(command, false, value);
+    saveSelection();
+    syncContent();
+  }
+
+  function applyHighlight() {
+    editorRef.current?.focus();
+    restoreSelection();
+    document.execCommand("styleWithCSS", false, true);
+    document.execCommand("hiliteColor", false, "#fff59d");
+    document.execCommand("styleWithCSS", false, false);
+    saveSelection();
+    syncContent();
+  }
+
+  function insertLink() {
+    if (!linkDraft.url.trim()) {
+      return;
+    }
+
+    editorRef.current?.focus();
+    restoreSelection();
+    document.execCommand("createLink", false, linkDraft.url.trim());
+
+    const selection = window.getSelection();
+    const anchor =
+      selection?.anchorNode?.parentElement?.closest("a") ??
+      editorRef.current?.querySelector(`a[href="${linkDraft.url.trim()}"]`);
+
+    if (anchor) {
+      if (linkDraft.newTab) {
+        anchor.setAttribute("target", "_blank");
+        anchor.setAttribute("rel", "noreferrer");
+      } else {
+        anchor.removeAttribute("target");
+        anchor.removeAttribute("rel");
+      }
+    }
+
+    syncContent();
+    setLinkDraft({ open: false, url: "", newTab: true });
+  }
+
+  return (
+    <div className="rich-text-editor">
+      <div className="format-toolbar">
+        <button
+          className="toolbar-button"
+          onClick={() => runCommand("bold")}
+          onMouseDown={(event) => event.preventDefault()}
+          type="button"
+        >
+          Paks
+        </button>
+        <button
+          className="toolbar-button"
+          onClick={() => runCommand("italic")}
+          onMouseDown={(event) => event.preventDefault()}
+          type="button"
+        >
+          Kaldkiri
+        </button>
+        <button
+          className="toolbar-button"
+          onClick={() => runCommand("underline")}
+          onMouseDown={(event) => event.preventDefault()}
+          type="button"
+        >
+          Allajoonitud
+        </button>
+        <button
+          className="toolbar-button"
+          onClick={() => runCommand("strikeThrough")}
+          onMouseDown={(event) => event.preventDefault()}
+          type="button"
+        >
+          Läbikriipsutus
+        </button>
+        <button
+          className="toolbar-button toolbar-highlight"
+          onClick={applyHighlight}
+          onMouseDown={(event) => event.preventDefault()}
+          type="button"
+        >
+          Highlight
+        </button>
+        <button
+          className="toolbar-button"
+          onClick={() => runCommand("insertUnorderedList")}
+          onMouseDown={(event) => event.preventDefault()}
+          type="button"
+        >
+          Täpploend
+        </button>
+        <button
+          className="toolbar-button"
+          onClick={() => runCommand("insertOrderedList")}
+          onMouseDown={(event) => event.preventDefault()}
+          type="button"
+        >
+          Numberloend
+        </button>
+        <button
+          className="toolbar-button"
+          onClick={() => runCommand("indent")}
+          onMouseDown={(event) => event.preventDefault()}
+          type="button"
+        >
+          Nihuta sisse
+        </button>
+        <button
+          className="toolbar-button"
+          onClick={() => runCommand("outdent")}
+          onMouseDown={(event) => event.preventDefault()}
+          type="button"
+        >
+          Nihuta välja
+        </button>
+        <button
+          className="toolbar-button"
+          onClick={() => setLinkDraft((previous) => ({ ...previous, open: !previous.open }))}
+          onMouseDown={(event) => {
+            event.preventDefault();
+            saveSelection();
+          }}
+          type="button"
+        >
+          Hyperlink
+        </button>
+      </div>
+
+      {linkDraft.open ? (
+        <div className="link-inline-editor">
+          <input
+            className="input"
+            onChange={(event) => setLinkDraft((previous) => ({ ...previous, url: event.target.value }))}
+            placeholder="https://..."
+            type="url"
+            value={linkDraft.url}
+          />
+          <label className="toggle-pill">
+            <input
+              checked={linkDraft.newTab}
+              onChange={(event) => setLinkDraft((previous) => ({ ...previous, newTab: event.target.checked }))}
+              type="checkbox"
+            />
+            <span>Ava uuel vahekaardil</span>
+          </label>
+          <div className="inline-actions">
+            <Button kind="secondary" onClick={() => setLinkDraft({ open: false, url: "", newTab: true })} type="button">
+              Tühista
+            </Button>
+            <Button onClick={insertLink} type="button">
+              Lisa link
+            </Button>
+          </div>
+        </div>
+      ) : null}
+
+      <div
+        className="input rich-text-surface"
+        contentEditable
+        dir="ltr"
+        onBlur={syncContent}
+        onInput={syncContent}
+        onKeyUp={saveSelection}
+        onMouseUp={saveSelection}
+        ref={editorRef}
+        suppressContentEditableWarning
+      />
+      <p className="muted-copy">
+        Vali tekst ja kasuta tööriistu vormindamiseks. Loendid ja nested listid töötavad taande nuppudega.
+      </p>
     </div>
   );
 }
@@ -1480,9 +1743,11 @@ function RunBlocks({ blocks, onToggleChecklist, readOnly }) {
       {blocks.map((block) => {
         if (block.type === "paragraph") {
           return (
-            <p className="run-paragraph" key={block.id}>
-              {block.text}
-            </p>
+            <div
+              className="run-rich-text"
+              dangerouslySetInnerHTML={{ __html: paragraphHtml(block) }}
+              key={block.id}
+            />
           );
         }
 
