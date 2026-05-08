@@ -1,6 +1,9 @@
 import React, { useEffect, useRef, useState } from "react";
 import { initialData } from "./data.js";
 
+const APP_DATA_STORAGE_KEY = "koolikorraldus-app-data";
+const CURRENT_USER_STORAGE_KEY = "koolikorraldus-current-user";
+
 function cloneData(value) {
   return JSON.parse(JSON.stringify(value));
 }
@@ -138,6 +141,48 @@ function buildSeedNotifications(data) {
   collectFromInstances(data.archivedInstances, true);
 
   return notifications;
+}
+
+function createInitialAppData() {
+  const seeded = cloneData(initialData);
+  seeded.notifications = buildSeedNotifications(seeded);
+  return seeded;
+}
+
+function loadStoredAppData() {
+  if (typeof window === "undefined") {
+    return createInitialAppData();
+  }
+
+  try {
+    const raw = window.localStorage.getItem(APP_DATA_STORAGE_KEY);
+
+    if (!raw) {
+      return createInitialAppData();
+    }
+
+    const parsed = JSON.parse(raw);
+
+    if (!parsed || typeof parsed !== "object") {
+      return createInitialAppData();
+    }
+
+    return {
+      ...createInitialAppData(),
+      ...parsed,
+      notifications: Array.isArray(parsed.notifications) ? parsed.notifications : [],
+    };
+  } catch {
+    return createInitialAppData();
+  }
+}
+
+function loadStoredCurrentUserId() {
+  if (typeof window === "undefined") {
+    return initialData.users[0].id;
+  }
+
+  return window.localStorage.getItem(CURRENT_USER_STORAGE_KEY) || initialData.users[0].id;
 }
 
 function cloneTemplateBlocks(blocks) {
@@ -424,12 +469,8 @@ function PersonSelect({ users, selectedId, onChange, placeholder = "Kõik kasuta
 }
 
 function App() {
-  const [appData, setAppData] = useState(() => {
-    const seeded = cloneData(initialData);
-    seeded.notifications = buildSeedNotifications(seeded);
-    return seeded;
-  });
-  const [currentUserId, setCurrentUserId] = useState(initialData.users[0].id);
+  const [appData, setAppData] = useState(loadStoredAppData);
+  const [currentUserId, setCurrentUserId] = useState(loadStoredCurrentUserId);
   const [currentView, setCurrentView] = useState({ name: "home" });
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const notificationsRef = useRef(null);
@@ -460,6 +501,12 @@ function App() {
   const unreadNotifications = currentUserNotifications.filter((notification) => !notification.readAt);
 
   useEffect(() => {
+    if (!currentUser && appData.users.length) {
+      setCurrentUserId(appData.users[0].id);
+    }
+  }, [currentUser, appData.users]);
+
+  useEffect(() => {
     function handleOutsideClick(event) {
       if (notificationsRef.current && !notificationsRef.current.contains(event.target)) {
         setNotificationsOpen(false);
@@ -470,6 +517,22 @@ function App() {
 
     return () => window.removeEventListener("click", handleOutsideClick);
   }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    window.localStorage.setItem(APP_DATA_STORAGE_KEY, JSON.stringify(appData));
+  }, [appData]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    window.localStorage.setItem(CURRENT_USER_STORAGE_KEY, currentUserId);
+  }, [currentUserId]);
 
   const myActiveInstances = appData.activeInstances.filter((instance) => instance.assignedUserId === currentUserId);
   const filteredActiveInstances = appData.activeInstances.filter((instance) => {
